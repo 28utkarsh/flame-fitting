@@ -9,11 +9,13 @@ Max Planck Institute for Intelligent Systems. All rights reserved.
 More information about FLAME is available at http://flame.is.tue.mpg.de.
 For comments or questions, please email us at flame@tue.mpg.de
 '''
-
+import os
 import numpy as np
 import chumpy as ch
 from os.path import join
+import argparse
 
+from convert_xml_to_numpy_landmarks import XML_to_Numpy_Converter
 from psbody.mesh import Mesh
 from smpl_webuser.serialization import load_model
 from sbody.mesh_distance import ScanToMesh
@@ -21,6 +23,25 @@ from sbody.robustifiers import GMOf
 from sbody.alignment.objectives import sample_from_mesh
 from fitting.landmarks import load_embedding, landmark_error_3d, mesh_points_by_barycentric_coordinates
 from fitting.util import load_binary_pickle, write_simple_obj, safe_mkdir, get_unit_factor
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Scan file argument parser")
+    parser.add_argument("--scan_obj_file", required=True,
+                        help = "Path to the scanned object file")
+    parser.add_argument("--landmarks", required=True,
+                        help = "Path to the 3d landmarks")
+    parser.add_argument("--enable_npy_loading", '-en', action='store_true',
+                        help = "Enables the flag to load the landmarks from .npy file")
+    parser.add_argument("--model", '-m', default='male_model.pkl',
+                        help = "Flame model type")
+    parser.add_argument("--scan_unit", '-su', default='cm',
+                        help = "Flame scan unit",
+                        choices = ['m', 'cm', 'NA', 'mm'])
+    parser.add_argument("--output_dir", '-ou', required=True,
+                        help = "Output directory to save the flame results")
+    args = parser.parse_args()
+    return args
+
 
 # -----------------------------------------------------------------------------
 
@@ -170,24 +191,32 @@ def fit_scan(  scan,                        # input scan
 
 
 def run_fitting():
+    args = parse_args()
     # input scan
-    scan_path = './data/scan.obj'
+    # scan_path = './data/scan.obj'
+    scan_path = args.scan_obj_file
 
     # landmarks of the scan
-    scan_lmk_path = './data/scan_lmks.npy'
+    scan_lmk_path = args.landmarks
+
 
     # measurement unit of landmarks ['m', 'cm', 'mm', 'NA'] 
     # When using option 'NA', the scale of the scan will be estimated by rigidly aligning model and scan landmarks
-    scan_unit = 'm' 
-
+    scan_unit = args.scan_unit 
+    print("scan_unit:", scan_unit)
     scan = Mesh(filename=scan_path)
     print("loaded scan from:", scan_path)
 
-    lmk_3d = np.load(scan_lmk_path)
-    print("loaded scan landmark from:", scan_lmk_path)
+    if args.enable_npy_loading:
+        lmk_3d = np.load(scan_lmk_path)
+        print("loaded scan landmark from:", scan_lmk_path)
+    else:
+        converter = XML_to_Numpy_Converter(args.landmarks)
+        lmk_3d = converter.get_coords()
+        print("loaded landmarks from the XML file:", args.landmarks)
 
     # model
-    model_path = './models/generic_model.pkl' # change to 'female_model.pkl' or 'male_model.pkl', if gender is known
+    model_path = os.path.join('models', args.model) # change to 'female_model.pkl' or 'male_model.pkl', if gender is known
     model = load_model(model_path)       # the loaded model object is a 'chumpy' object, check https://github.com/mattloper/chumpy for details
     print("loaded model from:", model_path)
 
@@ -209,7 +238,7 @@ def run_fitting():
     lmk_3d[:] *= scale_factor
 
     # output
-    output_dir = './output'
+    output_dir = args.output_dir
     safe_mkdir(output_dir)
 
     # weights
